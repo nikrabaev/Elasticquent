@@ -27,6 +27,10 @@ return array(
     | Elasticquent models.
     */
 
-    'default_index' => 'my_custom_index_name',
+    'default_index' => env('ES_DEFAULT_INDEX'),
+
+    'version_index' => env('ES_VERSION_INDEX'),
+
+    'auto_index' => env('ES_AUTO_INDEX'),
 
 );

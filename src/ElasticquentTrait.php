@@ -2,10 +2,13 @@
 
 namespace Elasticquent;
 
-use Exception;
+use Carbon\Carbon;
 use ReflectionMethod;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Elasticsearch\Common\Exceptions\Missing404Exception;
+use Elasticsearch\Common\Exceptions\Conflict409Exception;
 
 /**
  * Elasticquent Trait
@@ -52,6 +55,29 @@ trait ElasticquentTrait
      * @var null|int
      */
     protected $documentVersion = null;
+
+    public static function bootElasticquentTrait()
+    {
+        static::saved(function(Model $model)
+        {
+            $model->autoIndex();
+        });
+
+        static::updated(function(Model $model)
+        {
+            $model->autoIndex();
+        });
+
+        static::created(function(Model $model)
+        {
+            $model->autoIndex();
+        });
+
+        static::deleted(function(Model $model)
+        {
+            $model->autoIndex();
+        });
+    }
 
     /**
      * New Collection
@@ -290,19 +316,33 @@ trait ElasticquentTrait
     /**
      * Add to Search Index
      *
-     * @throws Exception
+     * @throws Missing404Exception
+     * @param int $version
      * @return array
      */
-    public function addToIndex()
+    public function addToIndex($version = null)
     {
         if (!$this->exists) {
-            throw new Exception('Document does not exist.');
+            throw new Missing404Exception('Document does not exist.');
         }
 
         $params = $this->getBasicEsParams();
 
         // Get our document body data.
-        $params['body'] = $this->getIndexDocumentData();
+        $body = $this->getIndexDocumentData();
+
+        foreach ($body as $field => $value) {
+            if ($value instanceof Carbon) {
+                $body[$field] = $value->toDateTimeString();
+            }
+        }
+
+        $params['body'] = $body;
+
+        // Get our document with version.
+        if ($version) {
+            $params['version'] = $version;
+        }
 
         // The id for the document must always mirror the
         // key for this model, even if it is set to something
@@ -317,26 +357,92 @@ trait ElasticquentTrait
     /**
      * Remove From Search Index
      *
-     * @return array
+     * @return array|bool
      */
     public function removeFromIndex()
     {
-        return $this->getElasticSearchClient()->delete($this->getBasicEsParams());
+        try {
+            return $this->getElasticSearchClient()->delete($this->getBasicEsParams());
+        } catch (Missing404Exception $e) {
+            return false;
+        }
     }
 
     /**
      * Partial Update to Indexed Document
      *
-     * @return array
+     * @return array|bool
      */
     public function updateIndex()
     {
         $params = $this->getBasicEsParams();
 
         // Get our document body data.
-        $params['body']['doc'] = $this->getIndexDocumentData();
+        $body = $this->getIndexDocumentData();
 
-        return $this->getElasticSearchClient()->update($params);
+        foreach ($body as $field => $value) {
+            if ($value instanceof Carbon) {
+                $body[$field] = $value->toDateTimeString();
+            }
+        }
+
+        $params['body']['doc'] = $body;
+
+        try {
+            return $this->getElasticSearchClient()->update($params);
+        } catch (Missing404Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * @param int $version
+     * @return array|bool
+     */
+    public function indexWithVersion($version)
+    {
+        try {
+            return $this->addToIndex($version);
+        } catch (Missing404Exception $e) {
+            return false;
+        } catch (Conflict409Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Runs indexing functions after calling
+     * Eloquent's increment() method.
+     *
+     * @param array $options
+     * @return mixed
+     */
+    public function increment($column, $amount = 1, array $extra = [])
+    {
+        return $this->autoIndex(parent::increment($column, $amount, $extra));
+    }
+
+    /**
+     * Runs indexing functions after calling
+     * Eloquent's decrement() method.
+     *
+     * @param array $options
+     * @return mixed
+     */
+    public function decrement($column, $amount = 1, array $extra = [])
+    {
+        return $this->autoIndex(parent::decrement($column, $amount, $extra));
+    }
+
+    public function autoIndex($saved = true)
+    {
+        if ($this->getAutoIndex()) {
+            // When updating fails, it means that the index doesn't exist, so it is created.
+            if (!$this->updateIndex()) {
+                $this->addToIndex();
+            }
+        }
+        return $saved;
     }
 
     /**
