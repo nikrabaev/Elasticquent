@@ -24,6 +24,25 @@ trait ElasticquentConfigTrait
     }
 
     /**
+     * Get Auto Index
+     *
+     * @return string
+     */
+    public function getAutoIndex()
+    {
+        // The first thing we check is if there is an elasticquent
+        // config file and if there is a auto index.
+        $auto_index = $this->getElasticConfig('auto_index');
+
+        if ($auto_index === true || $auto_index === false) {
+            return $auto_index;
+        }
+
+        // Otherwise we will just go with true
+        return true;
+    }
+
+    /**
      * Get the Elasticquent config
      *
      * @param string $key the configuration key
