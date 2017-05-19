@@ -2,13 +2,19 @@
 
 namespace Elasticquent;
 
-use Carbon\Carbon;
-use ReflectionMethod;
+use Carbon\Carbon, ReflectionMethod;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+
+use Elasticquent\ElasticquentQueryBuilder;
+
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Elasticsearch\Common\Exceptions\Missing404Exception;
 use Elasticsearch\Common\Exceptions\Conflict409Exception;
+
+use Elasticquent\ElasticquentPaginator;
+use Illuminate\Pagination\LengthAwarePaginator as Paginator;
 
 /**
  * Elasticquent Trait
@@ -234,6 +240,144 @@ trait ElasticquentTrait
     }
 
     /**
+     * Determine if a model has a elasticsearch global scope.
+     *
+     * @param  \Illuminate\Database\Eloquent\Scope|string  $scope
+     * @return bool
+     */
+    public static function hasESGlobalScope()
+    {
+        $instance = new static;
+        if (method_exists(get_class($instance->model), 'addESGlobalScope')) {
+            return ! is_null($instance->addESGlobalScope());
+        }
+        return false;
+    }
+
+    /**
+     * Get a elasticsearch global scope registered with the model.
+     *
+     * @param  \Illuminate\Database\Eloquent\Scope|string  $scope
+     * @return \Illuminate\Database\Eloquent\Scope|\Closure|null
+     */
+    public static function getESGlobalScope()
+    {
+        $instance = new static;
+
+        if ($instance->hasESGlobalScope()) {
+
+            $es_scope = $instance->addESGlobalScope();
+
+            if ($es_scope instanceof ElasticquentQueryBuilder) {
+                $es_scope = $es_scope->buildMergeQuery();
+            }
+
+            return $es_scope;
+        }
+
+        return [];
+    }
+
+    /**
+     * Get all of the models from the database.
+     *
+     * @param  array|mixed  $columns
+     * @return \Illuminate\Database\Eloquent\Collection|static[]
+     */
+    public static function all($columns = [], $es_global_scope = true)
+    {
+        $instance = new static;
+
+        $query['size'] = 10000;
+
+        return $instance->complexSearch($query, $columns, $es_global_scope);
+    }
+
+    /**
+     * Find a model by its primary key.
+     *
+     * @param  mixed  $id
+     * @param  array  $columns
+     * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection|static[]|static|null
+     */
+    public static function find($id, array $columns = [], $es_global_scope = true)
+    {
+        $instance = new static;
+        $query = new ElasticquentQueryBuilder;
+
+        if (is_array($id)) {
+            $query->whereIn($instance->getKeyName(), $id)->orderBy($instance->getKeyName(), 'asc');
+            return $instance->complexSearch($query->buildMergeQuery(), $columns, $es_global_scope);
+        } else {
+            $query->where($instance->getKeyName(), $id)->take(1);
+            return $instance->complexSearch($query->buildMergeQuery(), $columns, $es_global_scope)->first();
+        }
+    }
+
+    /**
+     * Find a model by its primary key or throw an exception.
+     *
+     * @param  mixed  $id
+     * @param  array  $columns
+     * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     */
+    public static function findOrFail($id, array $columns = [], $es_global_scope = true)
+    {
+        $instance = new static;
+
+        $result = $instance->find($id, $columns, $es_global_scope);
+
+        if (is_array($id)) {
+            if ($result->totalHits() == count(array_unique($id))) {
+                return $result;
+            }
+        } elseif (! is_null($result)) {
+            return $result;
+        }
+
+        throw (new ModelNotFoundException)->setModel(get_class($instance->model));
+    }
+
+    /**
+     * Execute the query and get the first result.
+     *
+     * @param  array  $columns
+     * @return \Illuminate\Database\Eloquent\Model|static|null
+     */
+    public static function first($query = [], array $columns = [], $es_global_scope = true)
+    {
+        $instance = new static;
+
+        if ($query instanceof ElasticquentQueryBuilder) {
+            $query = $query->buildMergeQuery();
+        }
+        $query['size'] = 1;
+
+        return $instance->complexSearch($query, $columns, $es_global_scope)->first();
+    }
+
+    /**
+     * Execute the query and get the first result or throw an exception.
+     *
+     * @param  array  $columns
+     * @return \Illuminate\Database\Eloquent\Model|static
+     *
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     */
+    public static function firstOrFail($query = [], array $columns = [], $es_global_scope = true)
+    {
+        $instance = new static;
+
+        if (! is_null($model = $instance->first($query, $columns, $es_global_scope))) {
+            return $model;
+        }
+
+        throw (new ModelNotFoundException)->setModel(get_class($instance->model));
+    }
+
+    /**
      * Search By Query
      *
      * Search with a query array
@@ -247,7 +391,31 @@ trait ElasticquentTrait
      *
      * @return ElasticquentResultCollection
      */
-    public static function searchByQuery($query = null, $aggregations = null, $sourceFields = null, $limit = null, $offset = null, $sort = null)
+    public static function searchByQuery($query = null, $aggregations = null, $sourceFields = null, $limit = null, $offset = null, $sort = null, $es_global_scope = true)
+    {
+        $instance = new static;
+
+        $result = $instance->scopeSearchResult(null, $query, $aggregations, $sourceFields, $limit, $offset, $sort);
+
+        return static::hydrateElasticsearchResult($result);
+    }
+
+    /**
+     * Search By Query return Elastisearch Search Results
+     *
+     * Search with a query array
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $q
+     * @param array $query
+     * @param array $aggregations
+     * @param array $sourceFields
+     * @param int   $limit
+     * @param int   $offset
+     * @param array $sort
+     *
+     * @return ElasticquentResultCollection
+     */
+    public static function scopeSearchResult($q, $query = null, $aggregations = null, $sourceFields = null, $limit = null, $offset = null, $sort = null)
     {
         $instance = new static;
 
@@ -269,7 +437,149 @@ trait ElasticquentTrait
             $params['body']['sort'] = $sort;
         }
 
-        $result = $instance->getElasticSearchClient()->search($params);
+        return $instance->getElasticSearchClient()->search($params);
+    }
+
+    /**
+     * Map the given results to instances of the given model.
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $q
+     * @param  mixed  $results
+     * @return Collection
+     */
+    
+    public static function scopeResultMapping($q, $results)
+    {
+        $instance = new static;
+
+        if (count($results['hits']['total']) === 0) {
+            return Collection::make();
+        }
+
+        $keys = collect($results['hits']['hits'])->pluck('_id')->values()->all();
+        $models = $q->whereIn($instance->getKeyName(), $keys)->get()->keyBy($instance->getKeyName());
+
+        return collect($results['hits']['hits'])->map(function ($hit) use ($models) {
+            return isset($models[$hit['_id']]) ? $models[$hit['_id']] : null;
+        })->filter();
+    }
+
+
+    /**
+     * Search By Model Query return Model Collection
+     *
+     * Search with a query array
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $q
+     * @param array $query
+     * @param array $aggregations
+     * @param array $sourceFields
+     * @param int   $limit
+     * @param int   $offset
+     * @param array $sort
+     *
+     * @return ElasticquentResultCollection
+     */
+    public static function scopeSearchByModelQuery($q, $query = null, $aggregations = null, $sourceFields = null, $limit = null, $offset = null, $sort = null)
+    {
+        $instance = new static;
+
+        $results = $instance->searchResult($query, $aggregations, $sourceFields, $limit, $offset, $sort);
+        
+        return $instance->scopeResultMapping($q, $results);
+    }
+
+    /**
+     * Search By Model Query Builder return Model Collection
+     *
+     * Search with a query array
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $q
+     * @param array $query
+     * @param array $aggregations
+     * @param array $sourceFields
+     * @param int   $limit
+     * @param int   $offset
+     * @param array $sort
+     *
+     * @return ElasticquentResultCollection
+     */
+    public static function scopeSearchByModelQueryBuilder($q, $params = [], $columns = [], $es_global_scope = true)
+    {
+        $instance = new static;
+
+        $results = $instance->complexSearchResult($params, $columns, $es_global_scope);
+        
+        return $instance->scopeResultMapping($q, $results);
+    }
+
+    /**
+     * Search By Model Query return Model Collection with Pagination
+     *
+     * Search with a query array
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $q
+     * @param array $query
+     * @param array $aggregations
+     * @param array $sourceFields
+     * @param int   $limit
+     * @param int   $offset
+     * @param array $sort
+     *
+     * @return ElasticquentResultCollection
+     */
+    public static function scopePaginateByModelQuery($q, $query = null, $aggregations = null, $sourceFields = null, $limit = null, $offset = null, $sort = null)
+    {
+        $instance = new static;
+        
+        $results = $instance->searchResult($query, $aggregations, $sourceFields, $limit, $offset, $sort);
+        $models = $instance->scopeResultMapping($q, $results);
+
+        return new ElasticquentPaginator($models, $results['hits']['hits'], $results['hits']['total'], $limit, Paginator::resolveCurrentPage() ? : 1, ['path' => Paginator::resolveCurrentPath()]);
+    }
+
+    /**
+     * Search By Model Query Builder return Model Collection with Pagination
+     *
+     * Search with a query array
+     *
+     * @param \Illuminate\Database\Eloquent\Builder $q
+     * @param array $query
+     * @param array $aggregations
+     * @param array $sourceFields
+     * @param int   $limit
+     * @param int   $offset
+     * @param array $sort
+     *
+     * @return ElasticquentResultCollection
+     */
+    public static function scopePaginateByModelQueryBuilder($q, $params = [], $columns = [], $es_global_scope = true)
+    {
+        $instance = new static;
+        
+        $results = $instance->complexSearchResult($params, $columns, $es_global_scope);
+        $models = $instance->scopeResultMapping($q, $results);
+
+        if ($params instanceof ElasticquentQueryBuilder) {
+            $params = $params->buildMergeQuery();
+        }
+
+        return new ElasticquentPaginator($models, $results['hits']['hits'], $results['hits']['total'], $params['size'], Paginator::resolveCurrentPage() ? : 1, ['path' => Paginator::resolveCurrentPath()]);
+    }
+
+    /**
+     * Perform a "complex" or custom search.
+     *
+     * Using this method, a custom query can be sent to Elasticsearch.
+     *
+     * @param  $params parameters to be passed directly to Elasticsearch
+     * @return ElasticquentResultCollection
+     */
+    public static function complexSearch($params = [], $columns = [], $es_global_scope = true)
+    {
+        $instance = new static;
+
+        $result = $instance->scopeComplexSearchResult(null, $params, $columns, $es_global_scope);
 
         return static::hydrateElasticsearchResult($result);
     }
@@ -282,13 +592,30 @@ trait ElasticquentTrait
      * @param  $params parameters to be passed directly to Elasticsearch
      * @return ElasticquentResultCollection
      */
-    public static function complexSearch($params)
+    public static function scopeComplexSearchResult($q, $params = [], $columns = [], $es_global_scope = true)
     {
         $instance = new static;
+        $es_scope = [];
 
-        $result = $instance->getElasticSearchClient()->search($params);
+        if ($params instanceof ElasticquentQueryBuilder) {
+            $params = $params->buildMergeQuery();
+        }
 
-        return static::hydrateElasticsearchResult($result);
+        if ($es_global_scope) {
+            $es_scope = $instance->getESGlobalScope();
+        }
+
+        $params = array_merge_recursive($instance->getBasicEsParams(true, true, true), $params, $es_scope);
+
+        if (!empty($columns)) {
+            if (array_key_exists('_source', $params['body'])) {
+                $params['body']['_source']['include'] = array_values(array_unique(array_merge_recursive($params['body']['_source']['include'], $columns)));
+            } else {
+                $params['body']['_source']['include'] = $columns;
+            }
+        }
+
+        return $instance->getElasticSearchClient()->search($params);
     }
 
     /**
@@ -847,7 +1174,7 @@ trait ElasticquentTrait
         $attributes = $model->getAttributes();
 
         foreach ($attributes as $key => $value) {
-            if ($key === 'pivot') {
+            if ($key === 'pivot' && $parentRelation) {
                 unset($model[$key]);
                 $pivot = $parentRelation->newExistingPivot($value);
                 $model->setRelation($key, $pivot);
@@ -884,4 +1211,5 @@ trait ElasticquentTrait
         }
         return true;
     }
+
 }
