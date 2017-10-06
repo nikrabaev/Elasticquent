@@ -15,7 +15,7 @@ class ElasticquentPaginator extends Paginator
      * @param  int|null  $currentPage
      * @param  array  $options (path, query, fragment, pageName)
      */
-    public function __construct($items, $hits, $total, $perPage, $currentPage = null, array $options = [])
+    public function __construct($items, $hits, $total, $perPage = 15, $currentPage = null, array $options = [])
     {
         foreach ($options as $key => $value) {
             $this->{$key} = $value;
