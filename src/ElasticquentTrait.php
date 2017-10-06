@@ -361,7 +361,13 @@ trait ElasticquentTrait
         $models = $q->whereIn($instance->getKeyName(), $keys)->get()->keyBy($instance->getKeyName());
 
         return collect($results['hits']['hits'])->map(function ($hit) use ($models) {
-            return isset($models[$hit['_id']]) ? $models[$hit['_id']] : null;
+            if (isset($models[$hit['_id']])){
+                $model = $models[$hit['_id']];
+                $model->es_score = $hit['_score'];
+                return $model;
+            } else {
+                null;
+            }
         })->filter();
     }
 
