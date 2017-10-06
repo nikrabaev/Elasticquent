@@ -12,4 +12,9 @@ class ElasticquentSupport
     {
         return version_compare(Application::VERSION, '5', '>');
     }
+
+    public static function isLumen5()
+    {
+        return str_contains(app()->version(), ['Lumen', 'Laravel Components']);
+    }
 }
