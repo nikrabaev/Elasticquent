@@ -168,6 +168,33 @@ class ElasticquentQueryBuilder
      *
      * @throws \InvalidArgumentException
      */
+    public function fuzzyQuery($column, $value = null, $fuzziness = 'AUTO', $operator = 'and', $boolean = 'must')
+    {
+        $query = [
+            'match' => [
+                $column => [
+                    'query' => $value,
+                    'fuzziness' => $fuzziness,
+                    'operator' => $operator
+                ]
+            ]
+        ];
+        $this->mergeQuery($query, $boolean);
+        
+        return $this;
+    }
+
+    /**
+     * Add a basic match clause to the query.
+     *
+     * @param  string|array|\Closure  $column
+     * @param  mixed   $value
+     * @param  string  $boost
+     * @param  string  $boolean
+     * @return $this
+     *
+     * @throws \InvalidArgumentException
+     */
     public function matchQuery($column, $value = null, $boost = '100%', $boolean = 'must')
     {
         if ($boost) {
