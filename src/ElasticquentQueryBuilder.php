@@ -703,6 +703,16 @@ class ElasticquentQueryBuilder
         return $this;
     }
 
+    public function aggregationTerms($agg_name, $field)
+    {
+        $this->query['body']['aggs'][$agg_name] = [
+            'terms' => [
+                'field' => $field
+            ]
+        ];
+        return $this;
+    }
+
     /**
      * Enable an "explanation" clause to the query.
      *
