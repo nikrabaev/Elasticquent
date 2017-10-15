@@ -442,7 +442,7 @@ trait ElasticquentTrait
         $results = $instance->searchResult($query, $aggregations, $sourceFields, $limit, $offset, $sort);
         $models = $instance->scopeResultMapping($q, $results);
 
-        return new ElasticquentPaginator($models, $results['hits']['hits'], $results['hits']['total'], $limit, Paginator::resolveCurrentPage() ? : 1, ['path' => Paginator::resolveCurrentPath()]);
+        return new ElasticquentPaginator($models, $results['hits']['hits'], $results['hits']['total'], $limit, Paginator::resolveCurrentPage() ? : 1, ['path' => Paginator::resolveCurrentPath(), 'aggregations' => isset($results['aggregations']) ? $results['aggregations'] : []]);
     }
 
     /**
@@ -471,7 +471,7 @@ trait ElasticquentTrait
             $params = $params->buildMergeQuery();
         }
 
-        return new ElasticquentPaginator($models, $results['hits']['hits'], $results['hits']['total'], $params['size'], Paginator::resolveCurrentPage() ? : 1, ['path' => Paginator::resolveCurrentPath()]);
+        return new ElasticquentPaginator($models, $results['hits']['hits'], $results['hits']['total'], $params['size'], Paginator::resolveCurrentPage() ? : 1, ['path' => Paginator::resolveCurrentPath(), 'aggregations' => isset($results['aggregations']) ? $results['aggregations'] : []]);
     }
 
     /**
