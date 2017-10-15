@@ -47,6 +47,7 @@ class ElasticquentPaginator extends Paginator
             'to'            => $this->lastItem(),
             'hits'          => $this->hits,
             'data'          => $this->items->toArray(),
+            'aggregations'  => isset($this->aggregations) ? $this->aggregations : [],
         ];
     }
 }
