@@ -14,7 +14,8 @@ use Elasticsearch\Common\Exceptions\Missing404Exception;
 use Elasticsearch\Common\Exceptions\Conflict409Exception;
 
 use Elasticquent\ElasticquentPaginator;
-use Illuminate\Pagination\LengthAwarePaginator as Paginator;
+use /** @noinspection PhpUndefinedNamespaceInspection */
+    Illuminate\Pagination\LengthAwarePaginator as Paginator;
 
 /**
  * Elasticquent Trait
@@ -320,7 +321,7 @@ trait ElasticquentTrait
     {
         $instance = new static;
 
-        $params = $instance->getBasicEsParams(true, true, true, $limit, $offset);
+        $params = $instance->getBasicEsParams(true, true, $limit, $offset);
 
         if (!empty($sourceFields)) {
             $params['body']['_source']['include'] = $sourceFields;
@@ -512,7 +513,7 @@ trait ElasticquentTrait
             $es_scope = $instance->getESGlobalScope();
         }
 
-        $params = array_merge_recursive($instance->getBasicEsParams(true, true, true), $params, $es_scope);
+        $params = array_merge_recursive($instance->getBasicEsParams(true, true), $params, $es_scope);
 
         if (!empty($columns)) {
             if (array_key_exists('_source', $params['body'])) {
@@ -700,13 +701,12 @@ trait ElasticquentTrait
      *
      * @param bool $getIdIfPossible
      * @param bool $getSourceIfPossible
-     * @param bool $getTimestampIfPossible
      * @param int  $limit
      * @param int  $offset
      *
      * @return array
      */
-    public function getBasicEsParams($getIdIfPossible = true, $getSourceIfPossible = false, $getTimestampIfPossible = false, $limit = null, $offset = null)
+    public function getBasicEsParams($getIdIfPossible = true, $getSourceIfPossible = false, $limit = null, $offset = null)
     {
         $params = array(
             'index' => $this->getIndexName(),
@@ -717,7 +717,7 @@ trait ElasticquentTrait
             $params['id'] = $this->getKey();
         }
 
-        $fields = $this->buildFieldsParameter($getSourceIfPossible, $getTimestampIfPossible);
+        $fields = $this->buildFieldsParameter($getSourceIfPossible);
         if (!empty($fields)) {
             $params['fields'] = implode(',', $fields);
         }
@@ -737,19 +737,14 @@ trait ElasticquentTrait
      * Build the 'fields' parameter depending on given options.
      *
      * @param bool   $getSourceIfPossible
-     * @param bool   $getTimestampIfPossible
      * @return array
      */
-    private function buildFieldsParameter($getSourceIfPossible, $getTimestampIfPossible)
+    private function buildFieldsParameter($getSourceIfPossible)
     {
         $fieldsParam = array();
 
         if ($getSourceIfPossible) {
             $fieldsParam[] = '_source';
-        }
-
-        if ($getTimestampIfPossible) {
-            $fieldsParam[] = '_timestamp';
         }
 
         return $fieldsParam;
