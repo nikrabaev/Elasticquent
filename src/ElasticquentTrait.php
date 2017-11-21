@@ -320,7 +320,7 @@ trait ElasticquentTrait
     {
         $instance = new static;
 
-        $params = $instance->getBasicEsParams(true, true, $limit, $offset);
+        $params = $instance->getBasicEsParams(true, $limit, $offset);
 
         if (!empty($sourceFields)) {
             $params['body']['_source']['include'] = $sourceFields;
@@ -512,7 +512,7 @@ trait ElasticquentTrait
             $es_scope = $instance->getESGlobalScope();
         }
 
-        $params = array_merge_recursive($instance->getBasicEsParams(true, true), $params, $es_scope);
+        $params = array_merge_recursive($instance->getBasicEsParams(true), $params, $es_scope);
 
         if (!empty($columns)) {
             if (array_key_exists('_source', $params['body'])) {
@@ -699,13 +699,12 @@ trait ElasticquentTrait
      * type passed in a parameter array.
      *
      * @param bool $getIdIfPossible
-     * @param bool $getSourceIfPossible
      * @param int  $limit
      * @param int  $offset
      *
      * @return array
      */
-    public function getBasicEsParams($getIdIfPossible = true, $getSourceIfPossible = false, $limit = null, $offset = null)
+    public function getBasicEsParams($getIdIfPossible = true, $limit = null, $offset = null)
     {
         $params = array(
             'index' => $this->getIndexName(),
@@ -714,10 +713,6 @@ trait ElasticquentTrait
 
         if ($getIdIfPossible && $this->getKey()) {
             $params['id'] = $this->getKey();
-        }
-
-        if (!$getSourceIfPossible) {
-            $params['_source'] = false;
         }
 
         if (is_numeric($limit)) {
