@@ -14,8 +14,7 @@ use Elasticsearch\Common\Exceptions\Missing404Exception;
 use Elasticsearch\Common\Exceptions\Conflict409Exception;
 
 use Elasticquent\ElasticquentPaginator;
-use /** @noinspection PhpUndefinedNamespaceInspection */
-    Illuminate\Pagination\LengthAwarePaginator as Paginator;
+use Illuminate\Pagination\LengthAwarePaginator as Paginator;
 
 /**
  * Elasticquent Trait
@@ -717,9 +716,8 @@ trait ElasticquentTrait
             $params['id'] = $this->getKey();
         }
 
-        $fields = $this->buildFieldsParameter($getSourceIfPossible);
-        if (!empty($fields)) {
-            $params['fields'] = implode(',', $fields);
+        if (!$getSourceIfPossible) {
+            $params['_source'] = false;
         }
 
         if (is_numeric($limit)) {
@@ -731,23 +729,6 @@ trait ElasticquentTrait
         }
 
         return $params;
-    }
-
-    /**
-     * Build the 'fields' parameter depending on given options.
-     *
-     * @param bool   $getSourceIfPossible
-     * @return array
-     */
-    private function buildFieldsParameter($getSourceIfPossible)
-    {
-        $fieldsParam = array();
-
-        if ($getSourceIfPossible) {
-            $fieldsParam[] = '_source';
-        }
-
-        return $fieldsParam;
     }
 
     /**
